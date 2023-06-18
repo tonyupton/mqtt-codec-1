@@ -93,14 +93,59 @@ enum ControlPacketType {
 pub struct ConnectPacket {
     protocol_name: UTF8EncodedString,
     protocol_version: Byte,
-    user_name: Option<UTF8EncodedString>,
-    password: Option<UTF8EncodedString>,
     clean_start: Bit,
     will: Option<Will>,
     keep_alive: TwoByteInteger,
-    properties: Vec<Property>,
+    session_expiry_interval: Option<FourByteInteger>,
+    receive_maximum: Option<TwoByteInteger>,
+    maximum_packet_size: Option<FourByteInteger>,
+    topic_alias_maximum: Option<TwoByteInteger>,
+    request_response_information: Option<Bit>,
+    request_problem_information: Option<Bit>,
+    user_properties: Option<Vec<UTF8StringPair>>,
+    authentication_method: Option<UTF8EncodedString>,
+    authentication_data: Option<BinaryData>,
+    client_identifier: UTF8EncodedString,
+    user_name: Option<UTF8EncodedString>,
+    password: Option<UTF8EncodedString>,
 }
-pub struct ConnAckPacket {}
+
+pub struct Will {
+    qos: Byte,
+    retain: Bit,
+    topic: UTF8EncodedString,
+    will_delay_interval: Option<FourByteInteger>,
+    payload_format_indicator: Option<Byte>,
+    message_expiry_interval: Option<FourByteInteger>,
+    content_type: Option<UTF8EncodedString>,
+    response_topic: Option<UTF8EncodedString>,
+    correlation_data: Option<BinaryData>,
+    user_properties: Option<Vec<UTF8StringPair>>,
+    payload: BinaryData,
+}
+
+
+pub struct ConnAckPacket {
+    session_present: Bit,
+    connect_reason_code: ConnectReasonCode,
+    session_expiry_interval: Option<FourByteInteger>,
+    receive_maximum: Option<TwoByteInteger>,
+    maximum_qos: Option<Byte>,
+    retain_available: Option<Bit>,
+    maximum_packet_size: Option<FourByteInteger>,
+    assigned_client_identifier: Option<UTF8EncodedString>,
+    topic_alias_maximum: Option<TwoByteInteger>,
+    reason_string: Option<UTF8EncodedString>,
+    user_properties: Option<Vec<UTF8StringPair>>,
+    wildcard_subscription_available: Option<Bit>,
+    subscription_identifier_available: Option<Bit>,
+    shared_subscription_available: Option<Bit>,
+    server_keep_alive: Option<TwoByteInteger>,
+    response_information: Option<UTF8EncodedString>,
+    server_reference: Option<UTF8EncodedString>,
+    authentication_method: Option<UTF8EncodedString>,
+    authentication_data: Option<BinaryData>,
+}
 pub struct PublishPacket {}
 pub struct PubAckPacket {}
 pub struct PubRecPacket {}
@@ -162,13 +207,31 @@ pub enum ReasonCode {
 }
 
 
-
-pub struct Will {
-    qos: Byte,
-    retain: Bit,
-    topic: String,
-    payload: BinaryData,
+pub enum ConnectReasonCode {
+    Success = 0x00,
+    UnspecifiedError = 0x80,
+    MalformedPacket = 0x81,
+    ProtocolError = 0x82,
+    ImplementationSpecificError = 0x83,
+    UnsupportedProtocolVersion = 0x84,
+    ClientIdentifierNotValid = 0x85,
+    BadUserNameOrPassword = 0x86,
+    NotAuthorized = 0x87,
+    ServerUnavailable = 0x88,
+    ServerBusy = 0x89,
+    Banned = 0x8A,
+    BadAuthenticationMethod = 0x8C,
+    TopicNameInvalid = 0x90,
+    PacketTooLarge = 0x95,
+    QuotaExceeded = 0x97,
+    PayloadFormatInvalid = 0x99,
+    RetainNotSupported = 0x9A,
+    QoSNotSupported = 0x9B,
+    UseAnotherServer = 0x9C,
+    ServerMoved = 0x9D,
+    ConnectionRateExceeded = 0x9F
 }
+
 
 
 
