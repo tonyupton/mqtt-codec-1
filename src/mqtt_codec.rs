@@ -11,7 +11,8 @@ type UTF8EncodedString = String; // UTF-8 Encoded String
 type BinaryData = Vec<u8>; // Binary Data
 type UTF8StringPair = (String, String); // UTF-8 String Pair
 
-
+#[derive(Debug)]
+// MQTT Control Packet
 enum ControlPacketType {
     CONNECT = 1, // Client request to connect to Server
     CONNACK = 2, // Connect acknowledgment
@@ -30,12 +31,14 @@ enum ControlPacketType {
     AUTH = 15, // Authentication exchange
 }
 
+#[derive(Debug)]
 pub enum QoSLvl {
     QoS0 = 0, // At most once delivery
     QoS1 = 1, // At least once delivery
     QoS2 = 2, // Exactly once delivery
 }
 
+#[derive(Debug)]
 pub enum ReasonCode {
     Success = 0x00, // Normal disconnection, Granted QoS 0
     GrantedQoS1 = 0x01, // Granted QoS 1
@@ -82,7 +85,7 @@ pub enum ReasonCode {
     WildcardSubscriptionsNotSupported = 0xA2, // Wildcard Subscriptions not supported
 }
 
-
+#[derive(Debug)]
 pub enum ConnectReasonCode {
     Success = 0x00, // Connection accepted
     UnspecifiedError = 0x80, // The Server does not wish to reveal the reason for the failure, or none of the other Reason Codes apply.
@@ -111,6 +114,7 @@ pub enum ConnectReasonCode {
 
 // This enum is used to identify the type of the property.
 // The value of the property is stored in the Property enum.
+#[derive(Debug)]
 enum PropertyIdentifier {
     PayloadFormatIndicator = 0x01, // 0 = Unspecified (default), 1 = UTF-8
     MessageExpiryInterval = 0x02, // Measured in seconds
@@ -119,28 +123,29 @@ enum PropertyIdentifier {
     CorrelationData = 0x09, // used in Request/Response
     SubscriptionIdentifier = 0x0B, // identifies the subscription
     SessionExpiryInterval = 0x11, // Measured in seconds
-    AssignedClientIdentifier = 0x12,
-    ServerKeepAlive = 0x13,
-    AuthenticationMethod = 0x15,
-    AuthenticationData = 0x16,
-    RequestProblemInformation = 0x17,
-    WillDelayInterval = 0x18,
-    RequestResponseInformation = 0x19,
-    ResponseInformation = 0x1A,
-    ServerReference = 0x1C,
-    ReasonString = 0x1F,
-    ReceiveMaximum = 0x21,
-    TopicAliasMaximum = 0x22,
-    TopicAlias = 0x23,
-    MaximumQoS = 0x24,
-    RetainAvailable = 0x25,
-    UserProperty = 0x26,
-    MaximumPacketSize = 0x27,
-    WildcardSubscriptionAvailable = 0x28,
-    SubscriptionIdentifierAvailable = 0x29,
-    SharedSubscriptionAvailable = 0x2A,
+    AssignedClientIdentifier = 0x12, // Assigned Client Identifier
+    ServerKeepAlive = 0x13, // Measured in seconds
+    AuthenticationMethod = 0x15, // Authentication method
+    AuthenticationData = 0x16, // Authentication data
+    RequestProblemInformation = 0x17, // 0 = Do not send, 1 = Send
+    WillDelayInterval = 0x18, // Measured in seconds
+    RequestResponseInformation = 0x19, // 0 = Do not send, 1 = Send
+    ResponseInformation = 0x1A, // response information
+    ServerReference = 0x1C, // server reference
+    ReasonString = 0x1F, // human readable string
+    ReceiveMaximum = 0x21, // The Client uses this value to limit the number of QoS 1 and QoS 2 publications that it is willing to process concurrently.
+    TopicAliasMaximum = 0x22, // The Client uses this value to limit the number of Topic Aliases that it is willing to hold on this Connection.
+    TopicAlias = 0x23, // The Topic Alias is a non-negative integer value that is sent instead of a Topic Name in any PUBLISH packet that contains a non-empty Topic Alias field.
+    MaximumQoS = 0x24, // The Client uses this value to limit the maximum QoS level at which it is willing to publish messages.
+    RetainAvailable = 0x25, // 0 = Retain is not supported, 1 = Retain is supported
+    UserProperty = 0x26, // UTF-8 string pair
+    MaximumPacketSize = 0x27, // This value represents the maximum packet size that the Server is willing to accept.
+    WildcardSubscriptionAvailable = 0x28, // 0 = Wildcard Subscriptions are not supported, 1 = Wildcard Subscriptions are supported
+    SubscriptionIdentifierAvailable = 0x29, // 0 = Subscription Identifiers are not supported, 1 = Subscription Identifiers are supported
+    SharedSubscriptionAvailable = 0x2A, // 0 = Shared Subscriptions are not supported, 1 = Shared Subscriptions are supported
 }
 
+#[derive(Debug)]
 pub enum Property {
     PayloadFormatIndicator(Byte),
     MessageExpiryInterval(FourByteInteger),
@@ -171,7 +176,7 @@ pub enum Property {
     SharedSubscriptionAvailable(Byte),
 }
 
-
+#[derive(Debug)]
 pub struct ConnectPacket {
     protocol_name: UTF8EncodedString,
     protocol_version: Byte,
@@ -192,6 +197,7 @@ pub struct ConnectPacket {
     password: Option<UTF8EncodedString>,
 }
 
+#[derive(Debug)]
 pub struct Will {
     qos: QoSLvl,
     retain: Bit,
@@ -205,7 +211,7 @@ pub struct Will {
     payload: PublishPayload,
 }
 
-
+#[derive(Debug)]
 pub struct ConnAckPacket {
     session_present: Bit,
     connect_reason_code: ConnectReasonCode,
@@ -228,11 +234,13 @@ pub struct ConnAckPacket {
     authentication_data: Option<BinaryData>,
 }
 
+#[derive(Debug)]
 pub enum PublishPayload {
     BinaryData(BinaryData), // payload type 0
     UTF8EncodedString(UTF8EncodedString) // payload type 1
 }
 
+#[derive(Debug)]
 pub struct PublishPacket {
     dup: Bit, // 0 = Original, 1 = Duplicate
     qos: QoSLvl, // 0 = At most once, 1 = At least once, 2 = Exactly once
@@ -249,6 +257,7 @@ pub struct PublishPacket {
     payload: PublishPayload, // Payload
 }
 
+#[derive(Debug)]
 pub enum PubAckReasonCode {
     Success = 0x00, // The message is accepted
     NoMatchingSubscribers = 0x10, // The message is accepted but there are no subscribers
@@ -261,6 +270,7 @@ pub enum PubAckReasonCode {
     PayloadFormatInvalid = 0x99, // The payload format does not match the one specified in the Payload Format Indicator.
 }
 
+#[derive(Debug)]
 pub struct PubAckPacket {
     packet_identifier: TwoByteInteger, // The Packet Identifier of the PUBLISH Packet being acknowledged.
     reason_code: PubAckReasonCode, // Reason code.
@@ -268,6 +278,7 @@ pub struct PubAckPacket {
     user_properties: Option<Vec<UTF8StringPair>>, // OPTIONAL, User Property.
 }
 
+#[derive(Debug)]
 pub enum PubRecReasonCode {
     Success = 0x00, // The message is accepted
     NoMatchingSubscribers = 0x10, // The message is accepted but there are no subscribers
@@ -280,6 +291,7 @@ pub enum PubRecReasonCode {
     PayloadFormatInvalid = 0x99, // The payload format does not match the one specified in the Payload Format Indicator.
 }
 
+#[derive(Debug)]
 pub struct PubRecPacket {
     packet_identifier: TwoByteInteger,
     reason_code: PubAckReasonCode,
@@ -287,11 +299,13 @@ pub struct PubRecPacket {
     user_properties: Option<Vec<UTF8StringPair>>,
 }
 
+#[derive(Debug)]
 pub enum PubRelReasonCode {
     Success = 0x00, // The message is accepted
     PacketIdentifierNotFound = 0x92, // The Packet Identifier is not known. This is not an error during recovery, but at other times indicates a mismatch between the Session State on the Client and Server.
 }
 
+#[derive(Debug)]
 pub struct PubRelPacket {
     packet_identifier: TwoByteInteger,
     reason_code: PubRelReasonCode,
@@ -299,11 +313,13 @@ pub struct PubRelPacket {
     user_properties: Option<Vec<UTF8StringPair>>,
 }
 
+#[derive(Debug)]
 pub enum PubCompReasonCode {
     Success = 0x00, // The message is accepted
     PacketIdentifierNotFound = 0x92, // The Packet Identifier is not known. This is not an error during recovery, but at other times indicates a mismatch between the Session State on the Client and Server.
 }
 
+#[derive(Debug)]
 pub struct PubCompPacket {
     packet_identifier: TwoByteInteger,
     reason_code: PubCompReasonCode,
@@ -311,12 +327,14 @@ pub struct PubCompPacket {
     user_properties: Option<Vec<UTF8StringPair>>,
 }
 
+#[derive(Debug)]
 pub enum RetainHandling {
     SendAtSubscribeTime = 0x00,
     SendAtSubscribeTimeIfNewSubscription = 0x01,
     DoNotSendAtSubscribeTime = 0x02,
 }
 
+#[derive(Debug)]
 pub struct SubscriptionItem {
     topic_filter: UTF8EncodedString,
     maximum_qos: QoSLvl,
@@ -325,6 +343,7 @@ pub struct SubscriptionItem {
     retain_handling: RetainHandling,
 }
 
+#[derive(Debug)]
 pub struct SubscribePacket {
     packet_identifier: TwoByteInteger,
     subscription_identifier: Option<VariableByteInteger>,
@@ -335,6 +354,7 @@ pub struct SubscribePacket {
     subscriptions: Vec<SubscriptionItem>,
 }
 
+#[derive(Debug)]
 pub enum SubscribeReasonCode {
     GrantedQoS0 = 0x00, // Success - Maximum QoS 0
     GrantedQoS1 = 0x01, // Success - Maximum QoS 1
@@ -350,17 +370,22 @@ pub enum SubscribeReasonCode {
     WildcardSubscriptionsNotSupported = 0xA2, // Wildcard Subscriptions not supported
 }
 
+#[derive(Debug)]
 pub struct SubAckPacket {
     packet_identifier: TwoByteInteger,
     reason_string: Option<UTF8EncodedString>,
     user_properties: Option<Vec<UTF8StringPair>>,
     reason_codes: Vec<SubscribeReasonCode>,
 }
+
+#[derive(Debug)]
 pub struct UnsubscribePacket {
     packet_identifier: TwoByteInteger,
     user_properties: Option<Vec<UTF8StringPair>>,
     topic_filters: Vec<UTF8EncodedString>,
 }
+
+#[derive(Debug)]
 pub struct UnsubAckPacket {
     packet_identifier: TwoByteInteger,
     reason_string: Option<UTF8EncodedString>,
@@ -368,6 +393,7 @@ pub struct UnsubAckPacket {
     reason_codes: Vec<SubscribeReasonCode>,
 }
 
+#[derive(Debug)]
 pub enum DisconnectReasonCode {
     NormalDisconnection = 0x00, // Disconnect with Will Message
     DisconnectWithWillMessage = 0x04, // Disconnect with Will Message
@@ -400,6 +426,7 @@ pub enum DisconnectReasonCode {
     WildcardSubscriptionsNotSupported = 0xA2, // Wildcard Subscriptions not supported
 }
 
+#[derive(Debug)]
 pub struct DisconnectPacket {
     reason_code: DisconnectReasonCode,
     session_expiry_interval: Option<FourByteInteger>,
@@ -408,11 +435,14 @@ pub struct DisconnectPacket {
     server_reference: Option<UTF8EncodedString>,
 }
 
+#[derive(Debug)]
 pub enum AuthReasonCode {
     Success = 0x00, // Success
     ContinueAuthentication = 0x18, // Continue authentication
     ReAuthenticate = 0x19, // Re-authenticate
 }
+
+#[derive(Debug)]
 pub struct AuthPacket {
     reason_code: AuthReasonCode,
     authentication_method: Option<UTF8EncodedString>,
@@ -421,7 +451,7 @@ pub struct AuthPacket {
     user_properties: Option<Vec<UTF8StringPair>>,
 }
 
-
+#[derive(Debug)]
 pub enum ControlPacket {
     Connect(ConnectPacket),
     ConnAck(ConnAckPacket),
@@ -438,7 +468,6 @@ pub enum ControlPacket {
     PingResp,
     Disconnect(DisconnectPacket),
     Auth(AuthPacket),
-    None,
 }
 
 pub fn decode_packet() -> Result<ControlPacket, ReasonCode> {
@@ -461,4 +490,145 @@ pub fn decode_packet() -> Result<ControlPacket, ReasonCode> {
         user_name: None,
         password: None,
     }))
+}
+
+pub struct PacketDecoder<'a> {
+    buffer: &'a[u8],
+    position: u32,
+}
+
+pub struct PacketEncoder<'a> {
+    buffer: &'a mut[u8],
+    position: u32,
+}
+
+trait BitReader {
+    fn read_bit(&self, index: u8) -> Result<bool, ReasonCode>;
+}
+
+impl BitReader for Byte {
+    fn read_bit(&self, index: u8) -> Result<bool, ReasonCode> {
+        if index > 7 {
+            return Err(ReasonCode::MalformedPacket);
+        }
+
+        Ok((*self & (1 << index)) != 0)
+    }
+}
+
+impl PacketDecoder<'_> {
+    pub fn new(buffer: &[u8]) -> PacketDecoder {
+        PacketDecoder {
+            buffer,
+            position: 0,
+        }
+    }
+
+    fn read_byte(&mut self) -> Result<Byte, ReasonCode> {
+        if self.position >= self.buffer.len() as u32 {
+            return Err(ReasonCode::MalformedPacket);
+        }
+
+        let byte = self.buffer[self.position as usize];
+        self.position += 1;
+
+        let bit = byte.read_bit(1)?;
+
+        Ok(byte)
+    }
+
+    fn read_two_byte_integer(&mut self) -> Result<TwoByteInteger, ReasonCode> {
+        let msb = self.read_byte()? as u16;
+        let lsb = self.read_byte()? as u16;
+        Ok((msb << 8) | lsb)
+    }
+
+    fn read_four_byte_integer(&mut self) -> Result<FourByteInteger, ReasonCode> {
+        let msb = self.read_byte()? as u32;
+        let byte2 = self.read_byte()? as u32;
+        let byte3 = self.read_byte()? as u32;
+        let lsb = self.read_byte()? as u32;
+        Ok((msb << 24) | (byte2 << 16) | (byte3 << 8) | lsb)
+    }
+
+    fn read_variable_byte_integer(&mut self) -> Result<VariableByteInteger, ReasonCode> {
+        let mut multiplier = 1;
+        let mut value = 0;
+        loop {
+            let encoded_byte = self.read_byte()?;
+            value += (encoded_byte & 127) as u32 * multiplier;
+            if multiplier > 128 * 128 * 128 {
+                return Err(ReasonCode::MalformedPacket);
+            }
+            if (encoded_byte & 128) == 0 {
+                break;
+            }
+            multiplier *= 128;
+        }
+        Ok(value)
+    }
+
+    fn read_utf8_string(&mut self) -> Result<UTF8EncodedString, ReasonCode> {
+        let length = self.read_two_byte_integer()? as usize;
+        let mut string = Vec::with_capacity(length);
+        for _ in 0..length {
+            string.push(self.read_byte()?);
+        }
+        Ok(String::from_utf8(string).map_err(|_| ReasonCode::MalformedPacket)?)
+    }
+    
+    fn read_binary_data(&mut self) -> Result<BinaryData, ReasonCode> {
+        let length = self.read_two_byte_integer()? as usize;
+        let mut data = Vec::with_capacity(length);
+        for _ in 0..length {
+            data.push(self.read_byte()?);
+        }
+        Ok(data)
+    }
+
+    fn read_utf8_string_pair(&mut self) -> Result<UTF8StringPair, ReasonCode> {
+        let key = self.read_utf8_string()?;
+        let value = self.read_utf8_string()?;
+        Ok((key, value))
+    }
+}
+
+impl PacketEncoder<'_> {
+    pub fn new(buffer: &mut[u8]) -> PacketEncoder {
+        PacketEncoder {
+            buffer,
+            position: 0,
+        }
+    }
+    fn write_byte(&mut self, byte: Byte) -> Result<(), ReasonCode> {
+        if self.position >= self.buffer.len() as u32 {
+            return Err(ReasonCode::MalformedPacket);
+        }
+
+        self.buffer[self.position as usize] = byte;
+        self.position += 1;
+
+        Ok(())
+    }
+
+    fn write_two_byte_integer(&mut self, integer: TwoByteInteger) -> Result<(), ReasonCode> {
+        self.write_byte((integer >> 8) as Byte)?;
+        self.write_byte(integer as Byte)?;
+        Ok(())
+    }
+}
+
+fn encode_data() {
+    let mut buffer: [u8; 1024] = [0; 1024];
+    let mut encoder = PacketEncoder::new(&mut buffer);
+    encoder.write_byte(0x10).unwrap();
+    //buffer[0] = 0x10;
+    encoder.write_two_byte_integer(0x0004).unwrap();
+    //buffer[1] = 0x00;
+    //buffer[2] = 0x04;
+    //buffer[3] = 0x4d;
+    encoder.write_byte(0x51).unwrap();
+    //buffer[4] = 0x51;
+    encoder.write_byte(0x00).unwrap();
+    buffer[5] = 0x00;
 }
