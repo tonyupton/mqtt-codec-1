@@ -147,9 +147,9 @@ enum PropertyIdentifier {
 
 #[derive(Debug)]
 pub enum Property {
-    PayloadFormatIndicator(Byte),
-    MessageExpiryInterval(FourByteInteger),
-    ContentType(UTF8EncodedString),
+    PayloadFormatIndicator(Byte), // 0 = Unspecified (default), 1 = UTF-8
+    MessageExpiryInterval(FourByteInteger), // Measured in seconds
+    ContentType(UTF8EncodedString), // MIME type
     ResponseTopic(UTF8EncodedString),
     CorrelationData(BinaryData),
     SubscriptionIdentifier(VariableByteInteger),
@@ -470,6 +470,196 @@ pub enum ControlPacket {
     Auth(AuthPacket),
 }
 
+pub struct MqttWriter<T>
+where   T: std::io::Write
+{
+    writer: T,
+}
+
+impl<T: std::io::Write> MqttWriter<T> {
+    pub fn new(writer: T) -> MqttWriter<T> {
+        MqttWriter {
+            writer,
+        }
+    }
+
+    pub fn write_byte(&mut self, byte: Byte) -> Result<(), ReasonCode> {        
+        if let Err(error) = self.writer.write(&[byte]) {
+            return Err(ReasonCode::MalformedPacket);
+        }
+
+        Ok(())
+    }
+
+    pub fn write_two_byte_integer(&mut self, integer: TwoByteInteger) -> Result<(), ReasonCode> {
+        self.write_byte((integer >> 8) as Byte)?;
+        self.write_byte(integer as Byte)?;
+        Ok(())
+    }
+
+    pub fn write_four_byte_integer(&mut self, integer: FourByteInteger) -> Result<(), ReasonCode> {
+        self.write_byte((integer >> 24) as Byte)?;
+        self.write_byte((integer >> 16) as Byte)?;
+        self.write_byte((integer >> 8) as Byte)?;
+        self.write_byte(integer as Byte)?;
+        Ok(())
+    }
+
+    pub fn write_variable_byte_integer(&mut self, integer: VariableByteInteger) -> Result<(), ReasonCode> {
+        let mut value = integer;
+        loop {
+            let mut encoded_byte = (value % 128) as Byte;
+            value /= 128;
+            if value > 0 {
+                encoded_byte |= 128;
+            }
+            self.write_byte(encoded_byte)?;
+            if value <= 0 {
+                break;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn write_utf8_string(&mut self, string: &UTF8EncodedString) -> Result<(), ReasonCode> {
+        self.write_two_byte_integer(string.len() as TwoByteInteger)?;
+        for byte in string.bytes() {
+            self.write_byte(byte)?;
+        }
+        Ok(())
+    }
+
+    pub fn write_utf8_string_pair(&mut self, pair: &UTF8StringPair) -> Result<(), ReasonCode> {
+        self.write_utf8_string(&pair.0)?;
+        self.write_utf8_string(&pair.1)?;
+        Ok(())
+    }
+
+    pub fn write_binary_data(&mut self, data: &BinaryData) -> Result<(), ReasonCode> {
+        self.write_two_byte_integer(data.len() as TwoByteInteger)?;
+        for byte in data {
+            self.write_byte(*byte)?;
+        }
+        Ok(())
+    }
+}
+
+
+pub struct MqttReader<T>
+where   T: std::io::Read
+{
+    reader: T,
+}
+
+
+impl<T: std::io::Read> MqttReader<T> {
+    pub fn new(reader: T) -> MqttReader<T> {
+        MqttReader {
+            reader,
+        }
+    }
+
+    pub fn read_byte(&mut self) -> Result<Byte, ReasonCode> {
+        let mut buffer = [0; 1];
+        if let Err(error) = self.reader.read_exact(&mut buffer) {
+            return Err(ReasonCode::MalformedPacket);
+        }
+        Ok(buffer[0])
+    }
+
+    pub fn read_two_byte_integer(&mut self) -> Result<TwoByteInteger, ReasonCode> {
+        let mut buffer = [0; 2];
+        if let Err(error) = self.reader.read_exact(&mut buffer) {
+            return Err(ReasonCode::MalformedPacket);
+        }
+        Ok(((buffer[0] as TwoByteInteger) << 8) | (buffer[1] as TwoByteInteger))
+    }
+
+    pub fn read_four_byte_integer(&mut self) -> Result<FourByteInteger, ReasonCode> {
+        let mut buffer = [0; 4];
+        if let Err(error) = self.reader.read_exact(&mut buffer) {
+            return Err(ReasonCode::MalformedPacket);
+        }
+        Ok(((buffer[0] as FourByteInteger) << 24) | ((buffer[1] as FourByteInteger) << 16) | ((buffer[2] as FourByteInteger) << 8) | (buffer[3] as FourByteInteger))
+    }
+
+    pub fn read_variable_byte_integer(&mut self) -> Result<VariableByteInteger, ReasonCode> {
+        let mut value = 0;
+        let mut multiplier = 1;
+        loop {
+            let encoded_byte = self.read_byte()?;
+            value += (encoded_byte & 127) as VariableByteInteger * multiplier;
+            multiplier *= 128;
+            if multiplier > 128 * 128 * 128 {
+                return Err(ReasonCode::MalformedPacket);
+            }
+            if (encoded_byte & 128) == 0 {
+                break;
+            }
+        }
+        Ok(value)
+    }
+
+    pub fn read_utf8_string(&mut self) -> Result<UTF8EncodedString, ReasonCode> {
+        let length = self.read_two_byte_integer()?;
+        let mut buffer = vec![0; length as usize];
+        if let Err(error) = self.reader.read_exact(&mut buffer) {
+            return Err(ReasonCode::MalformedPacket);
+        }
+        match UTF8EncodedString::from_utf8(buffer.clone()) {
+            Err(error) => return Err(ReasonCode::MalformedPacket),
+            Ok(string) => return Ok(string),
+        }
+    }
+
+    pub fn read_utf8_string_pair(&mut self) -> Result<UTF8StringPair, ReasonCode> {
+        let key = self.read_utf8_string()?;
+        let value = self.read_utf8_string()?;
+        Ok((key, value))
+    }
+
+    pub fn read_binary_data(&mut self) -> Result<BinaryData, ReasonCode> {
+        let length = self.read_two_byte_integer()?;
+        let mut buffer = vec![0; length as usize];
+        if let Err(error) = self.reader.read_exact(&mut buffer) {
+            return Err(ReasonCode::MalformedPacket);
+        }
+        Ok(buffer)
+    }
+}
+
+
+trait BitReader {
+    fn read_bit(&self, index: u8) -> Result<bool, ReasonCode>;
+}
+
+impl BitReader for Byte {
+    fn read_bit(&self, index: u8) -> Result<bool, ReasonCode> {
+        if index > 7 {
+            return Err(ReasonCode::MalformedPacket);
+        }
+
+        Ok((*self & (1 << index)) != 0)
+    }
+}
+
+
+
+fn encode_data() -> Result<(), ReasonCode> {
+    let mut buffer = std::io::BufWriter::new(Vec::new());
+    let mut encoder = MqttWriter::new(&mut buffer);
+    encoder.write_byte(0x10)?;
+    encoder.write_two_byte_integer(0x0004)?;
+    encoder.write_byte(0x51)?;
+    encoder.write_byte(0x00)?;
+
+    let b: Byte = 0x00;
+    let b1 = b.read_bit(1)?;
+
+    Ok(())
+}
+
+
 pub fn decode_packet() -> Result<ControlPacket, ReasonCode> {
     Ok(ControlPacket::Connect(ConnectPacket {
         protocol_name: "MQTT".to_string(),
@@ -490,145 +680,4 @@ pub fn decode_packet() -> Result<ControlPacket, ReasonCode> {
         user_name: None,
         password: None,
     }))
-}
-
-pub struct PacketDecoder<'a> {
-    buffer: &'a[u8],
-    position: u32,
-}
-
-pub struct PacketEncoder<'a> {
-    buffer: &'a mut[u8],
-    position: u32,
-}
-
-trait BitReader {
-    fn read_bit(&self, index: u8) -> Result<bool, ReasonCode>;
-}
-
-impl BitReader for Byte {
-    fn read_bit(&self, index: u8) -> Result<bool, ReasonCode> {
-        if index > 7 {
-            return Err(ReasonCode::MalformedPacket);
-        }
-
-        Ok((*self & (1 << index)) != 0)
-    }
-}
-
-impl PacketDecoder<'_> {
-    pub fn new(buffer: &[u8]) -> PacketDecoder {
-        PacketDecoder {
-            buffer,
-            position: 0,
-        }
-    }
-
-    fn read_byte(&mut self) -> Result<Byte, ReasonCode> {
-        if self.position >= self.buffer.len() as u32 {
-            return Err(ReasonCode::MalformedPacket);
-        }
-
-        let byte = self.buffer[self.position as usize];
-        self.position += 1;
-
-        let bit = byte.read_bit(1)?;
-
-        Ok(byte)
-    }
-
-    fn read_two_byte_integer(&mut self) -> Result<TwoByteInteger, ReasonCode> {
-        let msb = self.read_byte()? as u16;
-        let lsb = self.read_byte()? as u16;
-        Ok((msb << 8) | lsb)
-    }
-
-    fn read_four_byte_integer(&mut self) -> Result<FourByteInteger, ReasonCode> {
-        let msb = self.read_byte()? as u32;
-        let byte2 = self.read_byte()? as u32;
-        let byte3 = self.read_byte()? as u32;
-        let lsb = self.read_byte()? as u32;
-        Ok((msb << 24) | (byte2 << 16) | (byte3 << 8) | lsb)
-    }
-
-    fn read_variable_byte_integer(&mut self) -> Result<VariableByteInteger, ReasonCode> {
-        let mut multiplier = 1;
-        let mut value = 0;
-        loop {
-            let encoded_byte = self.read_byte()?;
-            value += (encoded_byte & 127) as u32 * multiplier;
-            if multiplier > 128 * 128 * 128 {
-                return Err(ReasonCode::MalformedPacket);
-            }
-            if (encoded_byte & 128) == 0 {
-                break;
-            }
-            multiplier *= 128;
-        }
-        Ok(value)
-    }
-
-    fn read_utf8_string(&mut self) -> Result<UTF8EncodedString, ReasonCode> {
-        let length = self.read_two_byte_integer()? as usize;
-        let mut string = Vec::with_capacity(length);
-        for _ in 0..length {
-            string.push(self.read_byte()?);
-        }
-        Ok(String::from_utf8(string).map_err(|_| ReasonCode::MalformedPacket)?)
-    }
-    
-    fn read_binary_data(&mut self) -> Result<BinaryData, ReasonCode> {
-        let length = self.read_two_byte_integer()? as usize;
-        let mut data = Vec::with_capacity(length);
-        for _ in 0..length {
-            data.push(self.read_byte()?);
-        }
-        Ok(data)
-    }
-
-    fn read_utf8_string_pair(&mut self) -> Result<UTF8StringPair, ReasonCode> {
-        let key = self.read_utf8_string()?;
-        let value = self.read_utf8_string()?;
-        Ok((key, value))
-    }
-}
-
-impl PacketEncoder<'_> {
-    pub fn new(buffer: &mut[u8]) -> PacketEncoder {
-        PacketEncoder {
-            buffer,
-            position: 0,
-        }
-    }
-    fn write_byte(&mut self, byte: Byte) -> Result<(), ReasonCode> {
-        if self.position >= self.buffer.len() as u32 {
-            return Err(ReasonCode::MalformedPacket);
-        }
-
-        self.buffer[self.position as usize] = byte;
-        self.position += 1;
-
-        Ok(())
-    }
-
-    fn write_two_byte_integer(&mut self, integer: TwoByteInteger) -> Result<(), ReasonCode> {
-        self.write_byte((integer >> 8) as Byte)?;
-        self.write_byte(integer as Byte)?;
-        Ok(())
-    }
-}
-
-fn encode_data() {
-    let mut buffer: [u8; 1024] = [0; 1024];
-    let mut encoder = PacketEncoder::new(&mut buffer);
-    encoder.write_byte(0x10).unwrap();
-    //buffer[0] = 0x10;
-    encoder.write_two_byte_integer(0x0004).unwrap();
-    //buffer[1] = 0x00;
-    //buffer[2] = 0x04;
-    //buffer[3] = 0x4d;
-    encoder.write_byte(0x51).unwrap();
-    //buffer[4] = 0x51;
-    encoder.write_byte(0x00).unwrap();
-    buffer[5] = 0x00;
 }
