@@ -470,25 +470,37 @@ pub enum ControlPacket {
     Auth(AuthPacket),
 }
 
-pub struct MqttWriter<T>
-where   T: std::io::Write
+#[derive(Debug)]
+pub struct MqttWriter<'a>
 {
-    writer: T,
+    buffer: &'a mut [Byte],
+    position: usize,
 }
 
-impl<T: std::io::Write> MqttWriter<T> {
-    pub fn new(writer: T) -> MqttWriter<T> {
+#[derive(Debug)]
+pub struct MqttReader<'a>
+{
+    buffer: &'a [Byte],
+    position: usize,
+}
+
+
+impl<'a> MqttWriter<'a> {
+    pub fn new(buffer: &'a mut [u8]) -> MqttWriter {
         MqttWriter {
-            writer,
+            buffer: buffer,
+            position: 0,
         }
     }
 
     pub fn write_byte(&mut self, byte: Byte) -> Result<(), ReasonCode> {        
-        if let Err(error) = self.writer.write(&[byte]) {
-            return Err(ReasonCode::MalformedPacket);
+        if self.position < self.buffer.len() {
+            self.buffer[self.position] = byte;
+            self.position += 1;
+            Ok(())
+        } else {
+            Err(ReasonCode::PacketTooLarge)
         }
-
-        Ok(())
     }
 
     pub fn write_two_byte_integer(&mut self, integer: TwoByteInteger) -> Result<(), ReasonCode> {
@@ -545,42 +557,34 @@ impl<T: std::io::Write> MqttWriter<T> {
 }
 
 
-pub struct MqttReader<T>
-where   T: std::io::Read
-{
-    reader: T,
-}
-
-
-impl<T: std::io::Read> MqttReader<T> {
-    pub fn new(reader: T) -> MqttReader<T> {
+impl<'a> MqttReader<'a> {
+    pub fn new(buffer: &'a [Byte]) -> MqttReader<'a> {
         MqttReader {
-            reader,
+            buffer: buffer,
+            position: 0,
         }
     }
 
     pub fn read_byte(&mut self) -> Result<Byte, ReasonCode> {
-        let mut buffer = [0; 1];
-        if let Err(error) = self.reader.read_exact(&mut buffer) {
-            return Err(ReasonCode::MalformedPacket);
+        if self.position < self.buffer.len() {
+            let byte = self.buffer[self.position];
+            self.position += 1;
+            Ok(byte)
+        } else {
+            Err(ReasonCode::MalformedPacket)
         }
-        Ok(buffer[0])
     }
 
     pub fn read_two_byte_integer(&mut self) -> Result<TwoByteInteger, ReasonCode> {
-        let mut buffer = [0; 2];
-        if let Err(error) = self.reader.read_exact(&mut buffer) {
-            return Err(ReasonCode::MalformedPacket);
-        }
-        Ok(((buffer[0] as TwoByteInteger) << 8) | (buffer[1] as TwoByteInteger))
+        let msb = self.read_byte()?;
+        let lsb = self.read_byte()?;
+        Ok(((msb as TwoByteInteger) << 8) | (lsb as TwoByteInteger))
     }
 
     pub fn read_four_byte_integer(&mut self) -> Result<FourByteInteger, ReasonCode> {
-        let mut buffer = [0; 4];
-        if let Err(error) = self.reader.read_exact(&mut buffer) {
-            return Err(ReasonCode::MalformedPacket);
-        }
-        Ok(((buffer[0] as FourByteInteger) << 24) | ((buffer[1] as FourByteInteger) << 16) | ((buffer[2] as FourByteInteger) << 8) | (buffer[3] as FourByteInteger))
+        let msb = self.read_two_byte_integer()?;
+        let lsb = self.read_two_byte_integer()?;
+        Ok(((msb as FourByteInteger) << 16) | (lsb as FourByteInteger))
     }
 
     pub fn read_variable_byte_integer(&mut self) -> Result<VariableByteInteger, ReasonCode> {
@@ -601,12 +605,12 @@ impl<T: std::io::Read> MqttReader<T> {
     }
 
     pub fn read_utf8_string(&mut self) -> Result<UTF8EncodedString, ReasonCode> {
-        let length = self.read_two_byte_integer()?;
-        let mut buffer = vec![0; length as usize];
-        if let Err(error) = self.reader.read_exact(&mut buffer) {
-            return Err(ReasonCode::MalformedPacket);
+        let length: usize = self.read_two_byte_integer()? as usize;
+        let mut bytes = vec![0; length];
+        for i in 0..length {
+            bytes[i as usize] = self.read_byte()?;
         }
-        match UTF8EncodedString::from_utf8(buffer.clone()) {
+        match UTF8EncodedString::from_utf8(bytes.to_vec()) {
             Err(error) => return Err(ReasonCode::MalformedPacket),
             Ok(string) => return Ok(string),
         }
@@ -619,12 +623,12 @@ impl<T: std::io::Read> MqttReader<T> {
     }
 
     pub fn read_binary_data(&mut self) -> Result<BinaryData, ReasonCode> {
-        let length = self.read_two_byte_integer()?;
-        let mut buffer = vec![0; length as usize];
-        if let Err(error) = self.reader.read_exact(&mut buffer) {
-            return Err(ReasonCode::MalformedPacket);
+        let length: usize = self.read_two_byte_integer()? as usize;
+        let mut bytes = vec![0; length];
+        for i in 0..length {
+            bytes[i as usize] = self.read_byte()?;
         }
-        Ok(buffer)
+        Ok(bytes)
     }
 }
 
@@ -644,40 +648,88 @@ impl BitReader for Byte {
 }
 
 
-
-fn encode_data() -> Result<(), ReasonCode> {
-    let mut buffer = std::io::BufWriter::new(Vec::new());
-    let mut encoder = MqttWriter::new(&mut buffer);
-    encoder.write_byte(0x10)?;
-    encoder.write_two_byte_integer(0x0004)?;
-    encoder.write_byte(0x51)?;
-    encoder.write_byte(0x00)?;
-
-    let b: Byte = 0x00;
-    let b1 = b.read_bit(1)?;
-
-    Ok(())
+fn sizeof_variable_byte_integer(value: VariableByteInteger) -> usize {
+    let mut value = value;
+    let mut size = 0;
+    loop {
+        size += 1;
+        value /= 128;
+        if value <= 0 {
+            break;
+        }
+    }
+    size
 }
 
+impl ConnectPacket {
+    pub fn new_v5(client_identifier: UTF8EncodedString) -> ConnectPacket {
+        ConnectPacket {
+            protocol_name: String::from("MQTT"),
+            protocol_version: 5,
+            clean_start: true,
+            will: None,
+            keep_alive: 60,
+            session_expiry_interval: None,
+            receive_maximum: None,
+            maximum_packet_size: None,
+            topic_alias_maximum: None,
+            request_response_information: None,
+            request_problem_information: None,
+            user_properties: None,
+            authentication_method: None,
+            authentication_data: None,
+            client_identifier: client_identifier,
+            user_name: None,
+            password: None,
+        }
+    }
 
-pub fn decode_packet() -> Result<ControlPacket, ReasonCode> {
-    Ok(ControlPacket::Connect(ConnectPacket {
-        protocol_name: "MQTT".to_string(),
-        protocol_version: 5,
-        clean_start: true,
-        will: None,
-        keep_alive: 60,
-        session_expiry_interval: None,
-        receive_maximum: None,
-        maximum_packet_size: None,
-        topic_alias_maximum: None,
-        request_response_information: None,
-        request_problem_information: None,
-        user_properties: None,
-        authentication_method: None,
-        authentication_data: None,
-        client_identifier: "Client 1".to_string(),
-        user_name: None,
-        password: None,
-    }))
+    pub fn new_v311(client_identifier: UTF8EncodedString) -> ConnectPacket {
+        ConnectPacket {
+            protocol_name: String::from("MQTT"),
+            protocol_version: 4,
+            clean_start: true,
+            will: None,
+            keep_alive: 60,
+            session_expiry_interval: None,
+            receive_maximum: None,
+            maximum_packet_size: None,
+            topic_alias_maximum: None,
+            request_response_information: None,
+            request_problem_information: None,
+            user_properties: None,
+            authentication_method: None,
+            authentication_data: None,
+            client_identifier: client_identifier,
+            user_name: None,
+            password: None,
+        }
+    }
+
+    fn calculate_remaining_length(&self) -> usize {
+        let mut remaining_length = 0;
+        remaining_length += self.protocol_name.len() + 2; // protocol name length
+        remaining_length += 1; // protocol version
+        remaining_length += 1; // connect flags
+        remaining_length += 2; // keep alive
+        let mut property_length = 0;
+        if let Some(x) = self.session_expiry_interval {
+            property_length += 1;
+            remaining_length += 4;
+        }
+        if let Some(x) = self.receive_maximum {
+            property_length += 1;
+            remaining_length += 2;
+        }
+        remaining_length += sizeof_variable_byte_integer(property_length);
+        remaining_length
+    }
+
+    pub fn write_to_buffer(&self, buffer: &mut [Byte]) -> Result<usize, ReasonCode> {
+        let mut writer = MqttWriter::new(buffer);
+        writer.write_byte(0x10)?;
+
+        Ok(0)
+    }
+
 }
