@@ -706,23 +706,73 @@ impl ConnectPacket {
         }
     }
 
-    fn calculate_remaining_length(&self) -> usize {
-        let mut remaining_length = 0;
-        remaining_length += self.protocol_name.len() + 2; // protocol name length
-        remaining_length += 1; // protocol version
-        remaining_length += 1; // connect flags
-        remaining_length += 2; // keep alive
-        let mut property_length = 0;
-        if let Some(x) = self.session_expiry_interval {
-            property_length += 1;
-            remaining_length += 4;
+    fn calculate_variable_header_length(&self) -> usize {
+        let mut length = 0;
+        let mut property_count = 0;
+        length += self.protocol_name.len() + 2; // protocol name length
+        length += 1; // protocol version
+        length += 1; // connect flags
+        length += 2; // keep alive
+        if let Some(_) = self.session_expiry_interval {
+            property_count += 1;
+            length += 4;
         }
-        if let Some(x) = self.receive_maximum {
-            property_length += 1;
-            remaining_length += 2;
+        if let Some(_) = self.receive_maximum {
+            property_count += 1;
+            length += 2;
         }
-        remaining_length += sizeof_variable_byte_integer(property_length);
-        remaining_length
+        if let Some(_) = self.maximum_packet_size {
+            property_count += 1;
+            length += 4;
+        }
+        if let Some(_) = self.topic_alias_maximum {
+            property_count += 1;
+            length += 2;
+        }
+        if let Some(_) = self.request_response_information {
+            property_count += 1;
+            length += 1;
+        }
+        if let Some(_) = self.request_problem_information {
+            property_count += 1;
+            length += 1;
+        }
+        if let Some(p) = &self.user_properties {
+            for (key, value) in p {
+                property_count += 1;
+                length += key.len() + 2;
+                length += value.len() + 2;
+            }
+        }
+        if let Some(a) = &self.authentication_method {
+            property_count += 1;
+            length += a.len() + 2;
+        }
+        if let Some(d) = &self.authentication_data {
+            property_count += 1;
+            length += d.len() + 2;
+        }
+        length += sizeof_variable_byte_integer(property_count);
+        length
+    }
+
+    fn calculate_payload_length(&self) -> usize {
+        let mut length = 0;
+        length += self.client_identifier.len() + 2;
+        if let Some(w) = &self.will {
+            length += w.topic.len() + 2;
+            match &w.payload {
+                PublishPayload::UTF8EncodedString(s) => length += s.len() + 2,
+                PublishPayload::BinaryData(b) => length += b.len() + 2,
+            }
+        }
+        if let Some(u) = &self.user_name {
+            length += u.len() + 2;
+        }
+        if let Some(p) = &self.password {
+            length += p.len() + 2;
+        }
+        length
     }
 
     pub fn write_to_buffer(&self, buffer: &mut [Byte]) -> Result<usize, ReasonCode> {
