@@ -31,7 +31,7 @@ enum ControlPacketType {
     AUTH = 15, // Authentication exchange
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum QoSLvl {
     QoS0 = 0, // At most once delivery
     QoS1 = 1, // At least once delivery
@@ -778,8 +778,32 @@ impl ConnectPacket {
     pub fn write_to_buffer(&self, buffer: &mut [Byte]) -> Result<usize, ReasonCode> {
         let mut writer = MqttWriter::new(buffer);
         writer.write_byte(0x10)?;
+        let variable_header_length = self.calculate_variable_header_length();
+        let payload_length = self.calculate_payload_length();
+        let remaining_length = variable_header_length + payload_length;
+        writer.write_variable_byte_integer(remaining_length as VariableByteInteger)?;
+        writer.write_utf8_string(&self.protocol_name)?;
+        writer.write_byte(self.protocol_version)?;
+        let mut connect_flags = 0;
+        if self.clean_start {
+            connect_flags |= 0x02;
+        }
+        if let Some(w) = &self.will {
+            connect_flags |= 0x04;
+            connect_flags |= (w.qos as Byte) << 3;
+            if w.retain {
+                connect_flags |= 0x20;
+            }
+        }
+        if let Some(u) = &self.user_name {
+            connect_flags |= 0x80;
+            if let Some(_) = &self.password {
+                connect_flags |= 0x40;
+            }
+        }
+        writer.write_byte(connect_flags)?;
+        writer.write_two_byte_integer(self.keep_alive)?;
 
         Ok(0)
     }
-
 }
